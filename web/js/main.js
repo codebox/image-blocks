@@ -23,7 +23,11 @@ function buildImageFactory(imageData) {
                 }
             }
             return {
+                x1, y1, x2, y2,
                 getVariance() {
+                    if (x2 - x1 < 5 || y2 - y1 < 5) {
+                        return 0;
+                    }
                     let min = Number.MAX_VALUE,
                         max = Number.MIN_VALUE;
                     forEach(p => {
@@ -32,6 +36,16 @@ function buildImageFactory(imageData) {
                         max = Math.max(max, v);
                     });
                     return max - min;
+                },
+                getAverage() {
+                    let r=0,g=0,b=0,count=0;
+                    forEach(p => {
+                        r += p[0];
+                        g += p[1];
+                        b += p[2];
+                        count++;
+                    });
+                    return [r/count,g/count,b/count];
                 },
                 split() {
                     const xDiff = x2 - x1,
@@ -59,22 +73,37 @@ img.onload = () => {
     canvas.width = img.width;
     canvas.height = img.height;
     const ctx = canvas.getContext('2d');
+    ctx.strokeStyle='red';
     ctx.drawImage(img,0,0);
-    const imageData = ctx.getImageData(0, 0, img.width-1, img.height-1),
-        image = makeImage(imageData);
-};
-img.src = './test.png';
+    const imageData = ctx.getImageData(0, 0, img.width, img.height),
+        factory = buildImageFactory(imageData);
+    document.body.appendChild(canvas)
 
-const VARIANCE_THRESHOLD = 10, queue = [], finished = [];
+    const VARIANCE_THRESHOLD = 300, queue = [factory.makeImagePiece(0,0,img.width-1, img.height-1)], finished = [];
 
-while (queue.length) {
-    const nextPiece = queue.shift();
-    if (nextPiece.getVariance() < VARIANCE_THRESHOLD) {
-        finished.push(nextPiece);
-    } else {
-        const [piece1, piece2] = nextPiece.split();
-        queue.push(piece1);
-        queue.push(piece2);
+    function processNext() {
+        "use strict";
+        const nextPiece = queue.shift(),
+            variance = nextPiece.getVariance();
+        if (variance < VARIANCE_THRESHOLD) {
+            finished.push(nextPiece);
+            const avg = nextPiece.getAverage();
+            ctx.beginPath();
+            ctx.fillStyle = `rgb(${Math.round(avg[0])},${Math.round(avg[1])},${Math.round(avg[2])})`;
+            ctx.fillRect(nextPiece.x1, nextPiece.y1, (nextPiece.x2 - nextPiece.x1 + 1), (nextPiece.y2 - nextPiece.y1 + 1))
+            ctx.stroke();
+        } else {
+            const [piece1, piece2] = nextPiece.split();
+            queue.push(piece1);
+            queue.push(piece2);
+        }
+        console.log(variance, queue.length)
+        if (queue.length) {
+            setTimeout(processNext, 0);
+        }
     }
-}
+    processNext();
+
+};
+img.src = './test.jpg';
 
