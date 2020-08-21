@@ -68,6 +68,7 @@ function buildImageFactory(imageData) {
     return factory;
 }
 
+const status = document.getElementById('status');
 img.onload = () => {
     const canvas = document.createElement('canvas');
     canvas.width = img.width;
@@ -79,8 +80,8 @@ img.onload = () => {
         factory = buildImageFactory(imageData);
     document.body.appendChild(canvas)
 
-    const VARIANCE_THRESHOLD = 300, queue = [factory.makeImagePiece(0,0,img.width-1, img.height-1)], finished = [];
-
+    const VARIANCE_THRESHOLD = 100, queue = [factory.makeImagePiece(0,0,img.width-1, img.height-1)], finished = [];
+    const tStart = Date.now();
     function processNext() {
         "use strict";
         const nextPiece = queue.shift(),
@@ -90,20 +91,26 @@ img.onload = () => {
             const avg = nextPiece.getAverage();
             ctx.beginPath();
             ctx.fillStyle = `rgb(${Math.round(avg[0])},${Math.round(avg[1])},${Math.round(avg[2])})`;
+            ctx.strokeStyle = 'black'
             ctx.fillRect(nextPiece.x1, nextPiece.y1, (nextPiece.x2 - nextPiece.x1 + 1), (nextPiece.y2 - nextPiece.y1 + 1))
+            ctx.rect(nextPiece.x1, nextPiece.y1, (nextPiece.x2 - nextPiece.x1 + 1), (nextPiece.y2 - nextPiece.y1 + 1))
             ctx.stroke();
         } else {
             const [piece1, piece2] = nextPiece.split();
             queue.push(piece1);
             queue.push(piece2);
         }
-        console.log(variance, queue.length)
         if (queue.length) {
-            setTimeout(processNext, 0);
+            status.innerText = queue.length;
+
+        } else {
+            status.innerText = (Date.now() - tStart) / 1000;
         }
     }
-    processNext();
+    while(queue.length) {
+        processNext();
+    }
 
 };
-img.src = './test.jpg';
+img.src = './test.png';
 
