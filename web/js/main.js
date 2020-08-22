@@ -1,6 +1,3 @@
-const img = new Image();
-
-
 function buildImageFactory(imageData) {
     "use strict";
     const data = imageData.data,
@@ -22,6 +19,7 @@ function buildImageFactory(imageData) {
                     }
                 }
             }
+            let average;
             return {
                 x1, y1, x2, y2,
                 getVariance() {
@@ -38,14 +36,17 @@ function buildImageFactory(imageData) {
                     return max - min;
                 },
                 getAverage() {
-                    let r=0,g=0,b=0,count=0;
-                    forEach(p => {
-                        r += p[0];
-                        g += p[1];
-                        b += p[2];
-                        count++;
-                    });
-                    return [r/count,g/count,b/count];
+                    if (!average) {
+                        let r=0,g=0,b=0,count=0;
+                        forEach(p => {
+                            r += p[0];
+                            g += p[1];
+                            b += p[2];
+                            count++;
+                        });
+                        average = [r/count,g/count,b/count];
+                    }
+                    return average;
                 },
                 split() {
                     const xDiff = x2 - x1,
@@ -68,49 +69,69 @@ function buildImageFactory(imageData) {
     return factory;
 }
 
-const status = document.getElementById('status');
-img.onload = () => {
-    const canvas = document.createElement('canvas');
-    canvas.width = img.width;
-    canvas.height = img.height;
-    const ctx = canvas.getContext('2d');
-    ctx.strokeStyle='red';
-    ctx.drawImage(img,0,0);
-    const imageData = ctx.getImageData(0, 0, img.width, img.height),
-        factory = buildImageFactory(imageData);
-    document.body.appendChild(canvas)
+const canvas = document.getElementById('canvas');
+const video = document.getElementById('video');
+const ctx = canvas.getContext('2d');
 
-    const VARIANCE_THRESHOLD = 100, queue = [factory.makeImagePiece(0,0,img.width-1, img.height-1)], finished = [];
-    const tStart = Date.now();
+video.addEventListener('play', function() {
+    const width = self.video.videoWidth * 2;
+    const height = self.video.videoHeight * 2;
+    const hiddenCanvas = document.createElement('canvas');
+    canvas.width = hiddenCanvas.width = width;
+    canvas.height = hiddenCanvas.height = height;
+    const hiddenCtx = hiddenCanvas.getContext('2d');
+
+    function computeFrame() {
+        hiddenCtx.drawImage(video, 0, 0, width, height);
+        let frame = hiddenCtx.getImageData(0, 0, width, height);
+        draw(frame);
+    }
+
+    function timerCallback() {
+        if (video.paused || video.ended) {
+            return;
+        }
+        computeFrame();
+        setTimeout(() => {
+            timerCallback();
+        }, 0);
+    }
+
+    timerCallback();
+}, false);
+
+function draw(imageData) {
+    "use strict";
+    const factory = buildImageFactory(imageData);
+
+    const VARIANCE_THRESHOLD = 300, queue = [factory.makeImagePiece(0, 0, imageData.width - 1, imageData.height - 1)], finished = [];
+
     function processNext() {
         "use strict";
         const nextPiece = queue.shift(),
             variance = nextPiece.getVariance();
         if (variance < VARIANCE_THRESHOLD) {
             finished.push(nextPiece);
-            const avg = nextPiece.getAverage();
-            ctx.beginPath();
-            ctx.fillStyle = `rgb(${Math.round(avg[0])},${Math.round(avg[1])},${Math.round(avg[2])})`;
-            ctx.strokeStyle = 'black'
-            ctx.fillRect(nextPiece.x1, nextPiece.y1, (nextPiece.x2 - nextPiece.x1 + 1), (nextPiece.y2 - nextPiece.y1 + 1))
-            ctx.rect(nextPiece.x1, nextPiece.y1, (nextPiece.x2 - nextPiece.x1 + 1), (nextPiece.y2 - nextPiece.y1 + 1))
-            ctx.stroke();
         } else {
             const [piece1, piece2] = nextPiece.split();
             queue.push(piece1);
             queue.push(piece2);
         }
-        if (queue.length) {
-            status.innerText = queue.length;
-
-        } else {
-            status.innerText = (Date.now() - tStart) / 1000;
-        }
     }
-    while(queue.length) {
+
+    while (queue.length) {
         processNext();
     }
 
-};
-img.src = './test.png';
+    function sortByAverage(p1, p2) {
+        return (p2[0] + p2[1] + p2[2]) - (p1[0] + p1[1] + p1[2]);
+    }
+    finished.sort(sortByAverage).forEach(nextPiece => {
+        const avg = nextPiece.getAverage();
+        ctx.beginPath();
+        ctx.fillStyle = `rgb(${Math.round(avg[0])},${Math.round(avg[1])},${Math.round(avg[2])})`;
+        ctx.fillRect(nextPiece.x1, nextPiece.y1, (nextPiece.x2 - nextPiece.x1 + 1), (nextPiece.y2 - nextPiece.y1 + 1))
+        ctx.fill();
+    })
+}
 
