@@ -1,7 +1,8 @@
 function buildImageFactory(imageData) {
     "use strict";
     const data = imageData.data,
-        width = imageData.width;
+        width = imageData.width,
+        maxArea = imageData.width * imageData.height;
 
     function getPixel(x,y) {
         const redIndex = (width * 4 * y) + (x * 4),
@@ -22,6 +23,9 @@ function buildImageFactory(imageData) {
             let average;
             return {
                 x1, y1, x2, y2,
+                getHeight() {
+                    return (x2 - x1) * (y2 - y1) / maxArea;
+                },
                 getVariance() {
                     if (x2 - x1 < 5 || y2 - y1 < 5) {
                         return 0;
@@ -72,10 +76,11 @@ function buildImageFactory(imageData) {
 const canvas = document.getElementById('canvas');
 const video = document.getElementById('video');
 const ctx = canvas.getContext('2d');
+let width, height;
 
 video.addEventListener('play', function() {
-    const width = self.video.videoWidth * 2;
-    const height = self.video.videoHeight * 2;
+    width = self.video.videoWidth * 2;
+    height = self.video.videoHeight * 2;
     const hiddenCanvas = document.createElement('canvas');
     canvas.width = hiddenCanvas.width = width;
     canvas.height = hiddenCanvas.height = height;
@@ -104,7 +109,10 @@ function draw(imageData) {
     "use strict";
     const factory = buildImageFactory(imageData);
 
-    const VARIANCE_THRESHOLD = 300, queue = [factory.makeImagePiece(0, 0, imageData.width - 1, imageData.height - 1)], finished = [];
+    const VARIANCE_THRESHOLD = 300, queue = [factory.makeImagePiece(0, 0, imageData.width - 1, imageData.height - 1)], finished = [],
+        xOffset = 0.25,
+        yOffset = 0.25,
+        e = Math.pow(1/(1-yOffset),height);
 
     function processNext() {
         "use strict";
@@ -123,15 +131,106 @@ function draw(imageData) {
         processNext();
     }
 
-    function sortByAverage(p1, p2) {
-        return (p2[0] + p2[1] + p2[2]) - (p1[0] + p1[1] + p1[2]);
+    function distanceFromViewer(p) {
+        return Math.pow(height - p.y2, 2) + Math.min(Math.pow(p.x1 - width/2, 2), Math.pow(p.x2 - width/2, 2));
     }
-    finished.sort(sortByAverage).forEach(nextPiece => {
-        const avg = nextPiece.getAverage();
+    function sortByDistance(p1, p2) {
+        return distanceFromViewer(p2) - distanceFromViewer(p1);
+    }
+    const d = 1000;
+    function transformCoord(x,y,z) {
+        return {
+            x: x*d/z,
+            y: y*d/z
+        };
+    }
+    function rgbToHsl(r, g, b){
+        r /= 255, g /= 255, b /= 255;
+        var max = Math.max(r, g, b), min = Math.min(r, g, b);
+        var h, s, l = (max + min) / 2;
+
+        if(max == min){
+            h = s = 0; // achromatic
+        }else{
+            var d = max - min;
+            s = l > 0.5 ? d / (2 - max - min) : d / (max + min);
+            switch(max){
+                case r: h = (g - b) / d + (g < b ? 6 : 0); break;
+                case g: h = (b - r) / d + 2; break;
+                case b: h = (r - g) / d + 4; break;
+            }
+            h /= 6;
+        }
+
+        return [h , s, l];
+    }
+    const tilt = Math.PI / 4;
+    function tilt3dCoords(x,y,z) {
+        return {
+            x,
+            y: (z-d) * Math.sin(tilt) - height/2,
+            z: (z-d) * Math.cos(tilt) + d
+        };
+    }
+    function getCanvasCoords(x,y,h) {
+        const x3dFlat = x - width/2,
+            y3dFlat = h - height/2,
+            z3dFlat = d + (height - y),
+            tiltedCoords = tilt3dCoords(x3dFlat, y3dFlat, z3dFlat),
+            transformedCoords = transformCoord(tiltedCoords.x, tiltedCoords.y, tiltedCoords.z),
+            // transformedCoords = transformCoord(x3dFlat, y3dFlat, z3dFlat),
+            projectedCoords = {x: transformedCoords.x + width/2, y: -transformedCoords.y + height/2};
+        // console.log(`(${x},${y}) -> (${x3dFlat},${y3dFlat},${z3dFlat}) -> (${tiltedCoords.x},${tiltedCoords.y},${tiltedCoords.z}) -> (${projectedCoords.x},${projectedCoords.y})`)
+
+        return [projectedCoords.x, projectedCoords.y];
+    }
+    function renderPiece(p) {
+        const
+            h = p.getHeight() * 1000,
+            hsl = rgbToHsl(...p.getAverage());
+
+        // Top face
+        ctx.fillStyle = `hsl(${hsl[0] * 360},${hsl[1] * 100}%,${hsl[2] * 70}%)`;
         ctx.beginPath();
-        ctx.fillStyle = `rgb(${Math.round(avg[0])},${Math.round(avg[1])},${Math.round(avg[2])})`;
-        ctx.fillRect(nextPiece.x1, nextPiece.y1, (nextPiece.x2 - nextPiece.x1 + 1), (nextPiece.y2 - nextPiece.y1 + 1))
+        ctx.moveTo(...getCanvasCoords(p.x1, p.y1, h));
+        ctx.lineTo(...getCanvasCoords(p.x2, p.y1, h));
+        ctx.lineTo(...getCanvasCoords(p.x2, p.y2, h));
+        ctx.lineTo(...getCanvasCoords(p.x1, p.y2, h));
         ctx.fill();
-    })
+
+        // Front face
+        ctx.fillStyle = `hsl(${hsl[0] * 360},${hsl[1] * 100}%,${hsl[2] * 40}%)`;
+        ctx.beginPath();
+        ctx.moveTo(...getCanvasCoords(p.x1, p.y2, 0));
+        ctx.lineTo(...getCanvasCoords(p.x1, p.y2, h));
+        ctx.lineTo(...getCanvasCoords(p.x2, p.y2, h));
+        ctx.lineTo(...getCanvasCoords(p.x2, p.y2, 0));
+        ctx.fill();
+
+        // Right face
+        if (p.x2 < width/2) {
+            ctx.fillStyle = `hsl(${hsl[0] * 360},${hsl[1] * 100}%,${hsl[2] * 40}%)`;
+            ctx.beginPath();
+            ctx.moveTo(...getCanvasCoords(p.x2, p.y2, 0));
+            ctx.lineTo(...getCanvasCoords(p.x2, p.y2, h));
+            ctx.lineTo(...getCanvasCoords(p.x2, p.y1, h));
+            ctx.lineTo(...getCanvasCoords(p.x2, p.y1, 0));
+            ctx.fill();
+        }
+
+        // Left face
+        if (p.x1 > width/2) {
+            ctx.beginPath();
+            ctx.fillStyle = `hsl(${hsl[0] * 360},${hsl[1] * 100}%,${hsl[2] * 100}%)`;
+            ctx.moveTo(...getCanvasCoords(p.x1, p.y2, 0));
+            ctx.lineTo(...getCanvasCoords(p.x1, p.y2, h));
+            ctx.lineTo(...getCanvasCoords(p.x1, p.y1, h));
+            ctx.lineTo(...getCanvasCoords(p.x1, p.y1, 0));
+            ctx.fill();
+        }
+
+    }
+    ctx.clearRect(0,0,width, height);
+    finished.sort(sortByDistance).forEach(renderPiece);
 }
 
