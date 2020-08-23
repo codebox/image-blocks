@@ -168,8 +168,8 @@ function draw(imageData) {
     function tilt3dCoords(x,y,z) {
         return {
             x,
-            y: (z-d) * Math.sin(tilt) - height/2,
-            z: (z-d) * Math.cos(tilt) + d
+            y: (z-d) * Math.sin(tilt) + (y + height/2) * Math.cos(tilt) - height/2 ,
+            z: (z-d) * Math.cos(tilt) - (y + height/2) * Math.sin(tilt) + d
         };
     }
     function getCanvasCoords(x,y,h) {
