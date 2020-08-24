@@ -1,7 +1,15 @@
 import sys, os.path, cv2
+import numpy as np
+from PIL import Image
 
-def transform_frame(frame):
-    return frame
+IMAGE_BACKGROUND = (255, 255, 255)
+
+def transform_frame(frame_in, size):
+    img_in = Image.fromarray(frame_in)
+    img_out = Image.new('RGB', size, IMAGE_BACKGROUND)
+
+    frame_out = np.asarray(img_out)
+    return frame_out
 
 def process(in_file, out_file):
     video_in = cv2.VideoCapture(in_file)
@@ -12,9 +20,10 @@ def process(in_file, out_file):
     video_out = cv2.VideoWriter(out_file, cv2.VideoWriter_fourcc(*'MP4V'), fps, (width, height))
 
     while video_in.isOpened():
-        found_frame, frame_data = video_in.read()
+        found_frame, frame_in = video_in.read()
         if found_frame:
-            video_out.write(frame_data)
+            frame_out = transform_frame(frame_in, (width, height))
+            video_out.write(frame_out)
         else:
             break
 
