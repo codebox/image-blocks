@@ -105,7 +105,7 @@ class CoordTransformer:
         transformed_x = tilted_coords['x'] * VIEW_DISTANCE / tilted_coords['z']
         transformed_y = tilted_coords['y'] * VIEW_DISTANCE / tilted_coords['z']
 
-        return {'x': transformed_x + self.view_width / 2, 'y': -transformed_y + self.view_height / 2}
+        return {'x': transformed_x + self.view_width / 2, 'y': -transformed_y + self.view_height / 2, 'distance': x3d_flat * x3d_flat + y3d_flat * y3d_flat + z3d_flat * z3d_flat }
 
 
 class PieceRenderer:
@@ -138,6 +138,9 @@ class PieceRenderer:
     def __colour_right_face(self, top_colour):
         return self.__to_hsl(top_colour, 0.6)
 
+    def __find_closest_distance(self, points):
+        return min(p['distance'] for p in points)
+
     def get_polygons(self, image_piece):
         x1 = image_piece.x1 * OUTPUT_SCALE
         y1 = image_piece.y1 * OUTPUT_SCALE
@@ -160,15 +163,15 @@ class PieceRenderer:
 
         return [
             # Top face
-            (self.__point(tbl), self.__point(tbr), self.__point(tfr), self.__point(tfl), self.__colour_top_face(rgb_colour)),
+            (self.__point(tbl), self.__point(tbr), self.__point(tfr), self.__point(tfl), self.__colour_top_face(rgb_colour), self.__find_closest_distance((tbl, tbr, tfr, tfl))),
             # Front face
-            (self.__point(tfl), self.__point(tfr), self.__point(bfr), self.__point(bfl), self.__colour_front_face(rgb_colour)),
+            (self.__point(tfl), self.__point(tfr), self.__point(bfr), self.__point(bfl), self.__colour_front_face(rgb_colour), self.__find_closest_distance((tfl, tfr, bfr, bfl))),
             # Back face
-            (self.__point(tbl), self.__point(tbr), self.__point(bbr), self.__point(bbl), self.__colour_back_face(rgb_colour)),
+            (self.__point(tbl), self.__point(tbr), self.__point(bbr), self.__point(bbl), self.__colour_back_face(rgb_colour), self.__find_closest_distance((tbl, tbr, bbr, bbl))),
             # Right face
-            (self.__point(tbr), self.__point(bbr), self.__point(bfr), self.__point(tfr), self.__colour_right_face(rgb_colour)),
+            (self.__point(tbr), self.__point(bbr), self.__point(bfr), self.__point(tfr), self.__colour_right_face(rgb_colour), self.__find_closest_distance((tbr, bbr, bfr, tfr))),
             # Left face
-            (self.__point(tbl), self.__point(bbl), self.__point(bfl), self.__point(tfl), self.__colour_left_face(rgb_colour)),
+            (self.__point(tbl), self.__point(bbl), self.__point(bfl), self.__point(tfl), self.__colour_left_face(rgb_colour), self.__find_closest_distance((tbl, bbl, bfl, tfl)))
         ]
 
 def transform_frame(frame_in, width_in, height_in):
@@ -194,9 +197,9 @@ def transform_frame(frame_in, width_in, height_in):
     polygons = [polygon for piece in finished_queue for polygon in renderer.get_polygons(piece)]
 
     def get_polygon_distance(p):
-        return 1
+        return p[5]
 
-    polygons.sort(key=get_polygon_distance)
+    polygons.sort(key=get_polygon_distance, reverse=True)
 
     image_draw = ImageDraw.Draw(img_out)
     [image_draw.polygon([p[0], p[1], p[2], p[3]], fill=p[4]) for p in polygons]
