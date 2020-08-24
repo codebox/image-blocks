@@ -5,6 +5,7 @@ from PIL import Image, ImageDraw
 IMAGE_BACKGROUND = (255, 255, 255)
 VARIANCE_THRESHOLD = 200
 MIN_PIECE_SIZE = 5
+OUTPUT_SCALE = 2
 
 class ImagePiece:
     def __init__(self, image, x1, y1, x2, y2):
@@ -53,8 +54,9 @@ class ImagePiece:
                 r_total += r
                 g_total += g
                 b_total += b
+                count += 1
 
-        return r_total/count, g_total/count, b_total/count
+        return int(r_total/count), int(g_total/count), int(b_total/count)
 
 class ImagePieceBuilder:
     def __init__(self, image):
@@ -68,16 +70,27 @@ class PieceRenderer:
         self.image = image
         self.image_draw = ImageDraw.Draw(image)
 
+    def __point(self, x, y):
+        return x * OUTPUT_SCALE, y * OUTPUT_SCALE
+
     def draw(self, image_piece):
-        # draw.polygon([(10,10),(50,30),(30,50)],fill=(255,0,255))
-        # self.image_draw()
-        pass
+        x1 = image_piece.x1
+        y1 = image_piece.y1
+        x2 = image_piece.x2
+        y2 = image_piece.y2
 
-def transform_frame(frame_in, size):
+        self.image_draw.polygon([
+            self.__point(x1, y1),
+            self.__point(x2, y1),
+            self.__point(x2, y2),
+            self.__point(x1, y2)
+        ],fill=image_piece.get_colour())
+
+def transform_frame(frame_in, width_in, height_in):
     img_in = Image.fromarray(frame_in)
-    img_out = Image.new('RGB', size, IMAGE_BACKGROUND)
+    img_out = Image.new('RGB', (width_in * OUTPUT_SCALE, height_in * OUTPUT_SCALE), IMAGE_BACKGROUND)
 
-    work_queue = [ImagePiece(img_in, 0, 0, size[0]-1, size[1]-1)]
+    work_queue = [ImagePiece(img_in, 0, 0, width_in-1, height_in-1)]
     finished_queue = []
 
     def allocate_to_queue(image_piece):
@@ -102,17 +115,17 @@ def transform_frame(frame_in, size):
 def process(in_file, out_file):
     video_in = cv2.VideoCapture(in_file)
     fps = video_in.get(cv2.CAP_PROP_FPS)
-    width = int(video_in.get(cv2.CAP_PROP_FRAME_WIDTH))
-    height = int(video_in.get(cv2.CAP_PROP_FRAME_HEIGHT))
+    width_in = int(video_in.get(cv2.CAP_PROP_FRAME_WIDTH))
+    height_in = int(video_in.get(cv2.CAP_PROP_FRAME_HEIGHT))
 
-    video_out = cv2.VideoWriter(out_file, cv2.VideoWriter_fourcc(*'MP4V'), fps, (width, height))
+    video_out = cv2.VideoWriter(out_file, cv2.VideoWriter_fourcc(*'MP4V'), fps, (width_in * OUTPUT_SCALE, height_in * OUTPUT_SCALE))
 
     frame_count = 1
     while video_in.isOpened():
         frame_count += 1
         found_frame, frame_in = video_in.read()
         if found_frame:
-            frame_out = transform_frame(frame_in, (width, height))
+            frame_out = transform_frame(frame_in, width_in, height_in)
             video_out.write(frame_out)
             print('Frame {}'.format(frame_count))
         else:
