@@ -109,10 +109,7 @@ function draw(imageData) {
     "use strict";
     const factory = buildImageFactory(imageData);
 
-    const VARIANCE_THRESHOLD = 300, queue = [factory.makeImagePiece(0, 0, imageData.width - 1, imageData.height - 1)], finished = [],
-        xOffset = 0.25,
-        yOffset = 0.25,
-        e = Math.pow(1/(1-yOffset),height);
+    const VARIANCE_THRESHOLD = 150, queue = [factory.makeImagePiece(0, 0, imageData.width - 1, imageData.height - 1)], finished = [];
 
     function processNext() {
         "use strict";
@@ -164,7 +161,7 @@ function draw(imageData) {
 
         return [h , s, l];
     }
-    const tilt = Math.PI / 4;
+    const tilt = Math.PI / 8;
     function tilt3dCoords(x,y,z) {
         return {
             x,
@@ -178,7 +175,6 @@ function draw(imageData) {
             z3dFlat = d + (height - y),
             tiltedCoords = tilt3dCoords(x3dFlat, y3dFlat, z3dFlat),
             transformedCoords = transformCoord(tiltedCoords.x, tiltedCoords.y, tiltedCoords.z),
-            // transformedCoords = transformCoord(x3dFlat, y3dFlat, z3dFlat),
             projectedCoords = {x: transformedCoords.x + width/2, y: -transformedCoords.y + height/2};
         // console.log(`(${x},${y}) -> (${x3dFlat},${y3dFlat},${z3dFlat}) -> (${tiltedCoords.x},${tiltedCoords.y},${tiltedCoords.z}) -> (${projectedCoords.x},${projectedCoords.y})`)
 
@@ -186,35 +182,35 @@ function draw(imageData) {
     }
     function renderPiece(p) {
         const
-            h = p.getHeight() * 1000,
+            h = Math.min(p.getHeight() * 1000, 60),
             hsl = rgbToHsl(...p.getAverage());
 
         // Top face
         ctx.fillStyle = `hsl(${hsl[0] * 360},${hsl[1] * 100}%,${hsl[2] * 70}%)`;
         ctx.beginPath();
         ctx.moveTo(...getCanvasCoords(p.x1, p.y1, h));
-        ctx.lineTo(...getCanvasCoords(p.x2, p.y1, h));
-        ctx.lineTo(...getCanvasCoords(p.x2, p.y2, h));
-        ctx.lineTo(...getCanvasCoords(p.x1, p.y2, h));
+        ctx.lineTo(...getCanvasCoords(p.x2+1, p.y1, h));
+        ctx.lineTo(...getCanvasCoords(p.x2+1, p.y2+1, h));
+        ctx.lineTo(...getCanvasCoords(p.x1, p.y2+1, h));
         ctx.fill();
 
         // Front face
         ctx.fillStyle = `hsl(${hsl[0] * 360},${hsl[1] * 100}%,${hsl[2] * 40}%)`;
         ctx.beginPath();
-        ctx.moveTo(...getCanvasCoords(p.x1, p.y2, 0));
-        ctx.lineTo(...getCanvasCoords(p.x1, p.y2, h));
-        ctx.lineTo(...getCanvasCoords(p.x2, p.y2, h));
-        ctx.lineTo(...getCanvasCoords(p.x2, p.y2, 0));
+        ctx.moveTo(...getCanvasCoords(p.x1, p.y2+1, 0));
+        ctx.lineTo(...getCanvasCoords(p.x1, p.y2+1, h));
+        ctx.lineTo(...getCanvasCoords(p.x2+1, p.y2+1, h));
+        ctx.lineTo(...getCanvasCoords(p.x2+1, p.y2+1, 0));
         ctx.fill();
 
         // Right face
         if (p.x2 < width/2) {
             ctx.fillStyle = `hsl(${hsl[0] * 360},${hsl[1] * 100}%,${hsl[2] * 40}%)`;
             ctx.beginPath();
-            ctx.moveTo(...getCanvasCoords(p.x2, p.y2, 0));
-            ctx.lineTo(...getCanvasCoords(p.x2, p.y2, h));
-            ctx.lineTo(...getCanvasCoords(p.x2, p.y1, h));
-            ctx.lineTo(...getCanvasCoords(p.x2, p.y1, 0));
+            ctx.moveTo(...getCanvasCoords(p.x2+1, p.y2+1, 0));
+            ctx.lineTo(...getCanvasCoords(p.x2+1, p.y2+1, h));
+            ctx.lineTo(...getCanvasCoords(p.x2+1, p.y1, h));
+            ctx.lineTo(...getCanvasCoords(p.x2+1, p.y1, 0));
             ctx.fill();
         }
 
@@ -222,8 +218,8 @@ function draw(imageData) {
         if (p.x1 > width/2) {
             ctx.beginPath();
             ctx.fillStyle = `hsl(${hsl[0] * 360},${hsl[1] * 100}%,${hsl[2] * 100}%)`;
-            ctx.moveTo(...getCanvasCoords(p.x1, p.y2, 0));
-            ctx.lineTo(...getCanvasCoords(p.x1, p.y2, h));
+            ctx.moveTo(...getCanvasCoords(p.x1, p.y2+1, 0));
+            ctx.lineTo(...getCanvasCoords(p.x1, p.y2+1, h));
             ctx.lineTo(...getCanvasCoords(p.x1, p.y1, h));
             ctx.lineTo(...getCanvasCoords(p.x1, p.y1, 0));
             ctx.fill();
