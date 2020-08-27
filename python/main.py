@@ -1,6 +1,7 @@
-import sys, os.path, cv2, math, colorsys, signal
+import sys, os.path, cv2, math, colorsys, signal, threading, multiprocessing
 import numpy as np
 from PIL import Image, ImageDraw
+from multiprocessing import Process, Queue, JoinableQueue
 
 IMAGE_BACKGROUND = (255, 255, 255)
 VARIANCE_THRESHOLD = 200
@@ -9,7 +10,10 @@ OUTPUT_SCALE = 4
 BLOCK_HEIGHT_FACTOR = 1000
 MAX_HEIGHT = 20
 VIEW_DISTANCE = 1000
-TILT = math.pi / 4
+TILT = math.pi / 2
+BORDER_SIZE=40
+WORKER_COUNT = max(1, multiprocessing.cpu_count() - 1)
+print('worker count=' + str(WORKER_COUNT))
 
 
 class ImagePiece:
@@ -105,7 +109,10 @@ class CoordTransformer:
         transformed_x = tilted_coords['x'] * VIEW_DISTANCE / tilted_coords['z']
         transformed_y = tilted_coords['y'] * VIEW_DISTANCE / tilted_coords['z']
 
-        return {'x': transformed_x + self.view_width / 2, 'y': -transformed_y + self.view_height / 2, 'distance': x3d_flat * x3d_flat + y3d_flat * y3d_flat + z3d_flat * z3d_flat }
+        return {
+            'x': transformed_x + self.view_width / 2,
+            'y': -transformed_y + self.view_height / 2,
+            'distance': tilted_coords['x'] * tilted_coords['x'] + tilted_coords['y'] * tilted_coords['y'] + tilted_coords['z'] * tilted_coords['z'] }
 
 
 class PieceRenderer:
@@ -117,7 +124,7 @@ class PieceRenderer:
         self.image_width = image_width
 
     def __point(self, p):
-        return p['x'], p['y']
+        return p['x'] + BORDER_SIZE, p['y'] + BORDER_SIZE
 
     def __to_hsl(self, rgb_colour, lightness_change):
         h, l, s = colorsys.rgb_to_hls(rgb_colour[0]/255, rgb_colour[1]/255, rgb_colour[2]/255)
@@ -176,7 +183,7 @@ class PieceRenderer:
 
 def transform_frame(frame_in, width_in, height_in):
     img_in = Image.fromarray(frame_in)
-    img_out = Image.new('RGB', (width_in * OUTPUT_SCALE, height_in * OUTPUT_SCALE), IMAGE_BACKGROUND)
+    img_out = Image.new('RGB', (width_in * OUTPUT_SCALE + 2 * BORDER_SIZE, height_in * OUTPUT_SCALE + 2 * BORDER_SIZE), IMAGE_BACKGROUND)
 
     work_queue = [ImagePiece(img_in, 0, 0, width_in-1, height_in-1)]
     finished_queue = []
@@ -208,13 +215,43 @@ def transform_frame(frame_in, width_in, height_in):
 
     return frame_out
 
+STOP_WORKING = None
+work_queue = JoinableQueue()
+finished_queue = Queue()
+
+class Workers:
+    def __init__(self, work_queue, work_function):
+        self.threads = []
+        self.work_queue = work_queue
+        for i in range(WORKER_COUNT):
+            self.threads.append(Process(target=work_function))
+
+    def start(self):
+        [thread.start() for thread in self.threads]
+
+    def stop(self):
+        for _ in self.threads:
+            self.work_queue.put(STOP_WORKING)
+
+def work():
+    while True:
+        work_item = work_queue.get()
+        if work_item == STOP_WORKING:
+            work_queue.task_done()
+            break
+        frame_id, next_frame, width_in, height_in = work_item
+        print('Processing frame ' + str(frame_id))
+        finished_queue.put((frame_id, transform_frame(next_frame, width_in, height_in)))
+        work_queue.task_done()
+
+
 def process(in_file, out_file):
     video_in = cv2.VideoCapture(in_file)
     fps = video_in.get(cv2.CAP_PROP_FPS)
     width_in = int(video_in.get(cv2.CAP_PROP_FRAME_WIDTH))
     height_in = int(video_in.get(cv2.CAP_PROP_FRAME_HEIGHT))
 
-    video_out = cv2.VideoWriter(out_file, cv2.VideoWriter_fourcc(*'MP4V'), fps, (width_in * OUTPUT_SCALE, height_in * OUTPUT_SCALE))
+    video_out = cv2.VideoWriter(out_file, cv2.VideoWriter_fourcc(*'MP4V'), fps, (width_in * OUTPUT_SCALE + 2 * BORDER_SIZE, height_in * OUTPUT_SCALE + 2 * BORDER_SIZE))
 
     user_stop = False
     def on_user_stop(_1, _2):
@@ -223,17 +260,28 @@ def process(in_file, out_file):
 
     signal.signal(signal.SIGINT, on_user_stop)
 
+    workers = Workers(work_queue, work)
+
     frame_count = 1
+    workers.start()
     while video_in.isOpened() and not user_stop:
         frame_count += 1
         found_frame, frame_in = video_in.read()
         if found_frame:
-            frame_out = transform_frame(frame_in, width_in, height_in)
-            video_out.write(frame_out)
-            print('Frame {}'.format(frame_count))
+            work_queue.put((frame_count, frame_in, width_in, height_in))
+
         else:
             break
 
+    workers.stop()
+    work_queue.join()
+
+    finished_list = []
+    while not finished_queue.empty():
+        finished_list.append(finished_queue.get())
+    finished_list.sort(key=lambda t: t[0])
+    print('Writing video...')
+    [video_out.write(frame_details[1]) for frame_details in finished_list]
     video_out.release()
 
 if __name__ == '__main__':
