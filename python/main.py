@@ -1,4 +1,4 @@
-import sys, os.path, cv2, math, colorsys
+import sys, os.path, cv2, math, colorsys, signal
 import numpy as np
 from PIL import Image, ImageDraw
 
@@ -216,8 +216,15 @@ def process(in_file, out_file):
 
     video_out = cv2.VideoWriter(out_file, cv2.VideoWriter_fourcc(*'MP4V'), fps, (width_in * OUTPUT_SCALE, height_in * OUTPUT_SCALE))
 
+    user_stop = False
+    def on_user_stop(_1, _2):
+        nonlocal user_stop
+        user_stop = True
+
+    signal.signal(signal.SIGINT, on_user_stop)
+
     frame_count = 1
-    while video_in.isOpened():
+    while video_in.isOpened() and not user_stop:
         frame_count += 1
         found_frame, frame_in = video_in.read()
         if found_frame:
