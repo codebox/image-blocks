@@ -3,15 +3,15 @@ import numpy as np
 from PIL import Image, ImageDraw
 from multiprocessing import Process, Queue, JoinableQueue
 
-IMAGE_BACKGROUND = (255, 255, 255)
-VARIANCE_THRESHOLD = 200
+IMAGE_BACKGROUND = (0,0,0)
+VARIANCE_THRESHOLD = 100
 MIN_PIECE_SIZE = 2
 OUTPUT_SCALE = 4
 BLOCK_HEIGHT_FACTOR = 1000
-MAX_HEIGHT = 20
+MAX_HEIGHT = 15
 VIEW_DISTANCE = 1000
-TILT = math.pi / 2
-BORDER_SIZE=40
+TILT =  math.pi / 2
+BORDER_SIZE=100
 WORKER_COUNT = max(1, multiprocessing.cpu_count() - 1)
 print('worker count=' + str(WORKER_COUNT))
 
@@ -240,10 +240,12 @@ def work():
             work_queue.task_done()
             break
         frame_id, next_frame, width_in, height_in = work_item
-        print('Processing frame ' + str(frame_id))
-        finished_queue.put((frame_id, transform_frame(next_frame, width_in, height_in)))
+        if not user_stop:
+            print('Processing frame ' + str(frame_id))
+            finished_queue.put((frame_id, transform_frame(next_frame, width_in, height_in)))
         work_queue.task_done()
 
+user_stop = False
 
 def process(in_file, out_file):
     video_in = cv2.VideoCapture(in_file)
@@ -253,16 +255,15 @@ def process(in_file, out_file):
 
     video_out = cv2.VideoWriter(out_file, cv2.VideoWriter_fourcc(*'MP4V'), fps, (width_in * OUTPUT_SCALE + 2 * BORDER_SIZE, height_in * OUTPUT_SCALE + 2 * BORDER_SIZE))
 
-    user_stop = False
     def on_user_stop(_1, _2):
-        nonlocal user_stop
+        global user_stop
         user_stop = True
 
     signal.signal(signal.SIGINT, on_user_stop)
 
     workers = Workers(work_queue, work)
 
-    frame_count = 1
+    frame_count = 0
     workers.start()
     while video_in.isOpened() and not user_stop:
         frame_count += 1
